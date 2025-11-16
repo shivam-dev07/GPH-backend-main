@@ -63,10 +63,10 @@ echo -e "${GREEN}Step 8: Creating .env file template...${NC}"
 if [ ! -f "$APP_DIR/.env" ]; then
     cat > /tmp/.env << 'EOF'
 # Database Configuration (Aiven MySQL)
-DB_HOST=mysql-3050fe0b-sde2024-0c30.l.aivencloud.com
-DB_PORT=16752
-DB_USER=avnadmin
-DB_PASSWORD=AVNS_t1kjGBiF83OqHaGxPpq
+DB_HOST=your-mysql-host
+DB_PORT=your-mysql-port
+DB_USER=your-mysql-user
+DB_PASSWORD=your-mysql-password
 DB_NAME=defaultdb
 
 # Flask Configuration
@@ -98,7 +98,7 @@ EOF
     sudo mv /tmp/.env $APP_DIR/.env
     sudo chown $APP_USER:$APP_USER $APP_DIR/.env
     sudo chmod 600 $APP_DIR/.env
-    echo -e "${YELLOW}WARNING: Please edit $APP_DIR/.env and update SECRET_KEY and other credentials${NC}"
+    echo -e "${YELLOW}WARNING: Please edit $APP_DIR/.env and update ALL credentials including database settings${NC}"
 else
     echo ".env file already exists, skipping..."
 fi

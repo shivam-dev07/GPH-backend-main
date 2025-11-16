@@ -167,10 +167,8 @@ Can't connect from outside:
   # Should show: Status: active, Port 80 ALLOW
   
 Database errors:
-  # Test connection
-  mysql -h mysql-3050fe0b-sde2024-0c30.l.aivencloud.com \
-        -P 16752 -u avnadmin -p
-  # Password: AVNS_t1kjGBiF83OqHaGxPpq
+  # Test connection (use your own credentials)
+  mysql -h YOUR_DB_HOST -P YOUR_DB_PORT -u YOUR_DB_USER -p
 
 Permission denied:
   sudo chown -R gph:gph /opt/gph-backend
