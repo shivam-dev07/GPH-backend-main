@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #45a049; }
+        .error { color: #f44336; }
+        .success { color: #4CAF50; }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .endpoint {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+        .status { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Backend Connection Test</h1>
+        <p>Test the connection to your Flask backend API</p>
+        
+        <div class="endpoint">
+            <strong>Backend URL:</strong> <span id="backendUrl">http://localhost:5000</span>
+        </div>
+
+        <h3>Test Endpoints:</h3>
+        <button onclick="testHealth()">Test Health Check</button>
+        <button onclick="testOfficers()">Test Officers API</button>
+        <button onclick="testDuties()">Test Duties API</button>
+        <button onclick="testVehicles()">Test Vehicles API</button>
+        <button onclick="testAllEndpoints()">Test All Endpoints</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:5000';
+        
+        function displayResult(title, data, isError = false) {
+            const resultDiv = document.getElementById('result');
+            const className = isError ? 'error' : 'success';
+            const status = isError ? '❌ FAILED' : '✅ SUCCESS';
+            
+            resultDiv.innerHTML = `
+                <div class="result">
+                    <div class="status ${className}">${status}: ${title}</div>
+                    <hr>
+                    ${JSON.stringify(data, null, 2)}
+                </div>
+            `;
+        }
+
+        async function testEndpoint(url, title) {
+            try {
+                console.log(`Testing: ${url}`);
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayResult(title, data);
+                    return { success: true, url, data };
+                } else {
+                    displayResult(title, data, true);
+                    return { success: false, url, data };
+                }
+            } catch (error) {
+                const errorData = {
+                    error: error.message,
+                    url: url,
+                    hint: 'Make sure the backend server is running on http://localhost:5000'
+                };
+                displayResult(title, errorData, true);
+                return { success: false, url, error: error.message };
+            }
+        }
+
+        async function testHealth() {
+            await testEndpoint(`${BASE_URL}/health`, 'Health Check');
+        }
+
+        async function testOfficers() {
+            await testEndpoint(`${BASE_URL}/api/officers`, 'Officers API');
+        }
+
+        async function testDuties() {
+            await testEndpoint(`${BASE_URL}/api/duties`, 'Duties API');
+        }
+
+        async function testVehicles() {
+            await testEndpoint(`${BASE_URL}/api/vehicles`, 'Vehicles API');
+        }
+
+        async function testAllEndpoints() {
+            const results = [];
+            
+            // Test all endpoints
+            results.push(await testEndpoint(`${BASE_URL}/health`, 'Health Check'));
+            await new Promise(r => setTimeout(r, 200));
+            
+            results.push(await testEndpoint(`${BASE_URL}/api/officers`, 'Officers API'));
+            await new Promise(r => setTimeout(r, 200));
+            
+            results.push(await testEndpoint(`${BASE_URL}/api/duties`, 'Duties API'));
+            await new Promise(r => setTimeout(r, 200));
+            
+            results.push(await testEndpoint(`${BASE_URL}/api/vehicles`, 'Vehicles API'));
+            await new Promise(r => setTimeout(r, 200));
+            
+            results.push(await testEndpoint(`${BASE_URL}/api/activities`, 'Activities API'));
+            await new Promise(r => setTimeout(r, 200));
+            
+            results.push(await testEndpoint(`${BASE_URL}/api/live-locations`, 'Live Locations API'));
+            
+            // Summary
+            const successCount = results.filter(r => r.success).length;
+            const totalCount = results.length;
+            
+            const summary = {
+                summary: `${successCount}/${totalCount} endpoints passed`,
+                results: results.map(r => ({
+                    url: r.url,
+                    status: r.success ? 'PASS' : 'FAIL',
+                    error: r.error || null
+                }))
+            };
+            
+            displayResult('All Endpoints Test Complete', summary, successCount < totalCount);
+        }
+
+        // Auto-test on load
+        window.onload = () => {
+            testHealth();
+        };
+    </script>
+</body>
+</html>

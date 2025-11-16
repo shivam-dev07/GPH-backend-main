@@ -1,0 +1,19 @@
+# Flask and Extensions
+Flask==3.0.0
+flask-cors==4.0.0
+
+# Database
+PyMySQL==1.1.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Authentication
+PyJWT==2.8.0
+
+# Development
+pytest==7.4.3
+requests==2.31.0
+
+# Google Cloud Storage
+google-cloud-storage==2.14.0
