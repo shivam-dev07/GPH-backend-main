@@ -75,7 +75,7 @@ class DutyController:
     def update_duty(duty_id, updates):
         """Update duty"""
         try:
-            log_info(f"Updating duty: {duty_id}")
+            log_info(f"Updating duty: {duty_id} with data: {updates}")
             success = DutyModel.update_duty(duty_id, updates)
             
             if not success:
@@ -83,8 +83,9 @@ class DutyController:
             
             return success_response({"message": "Success"})
         except Exception as e:
-            log_error(f"Error updating duty {duty_id}: {str(e)}")
-            return error_response("Failed to update duty", 500)
+            import traceback
+            log_error(f"Error updating duty {duty_id}: {str(e)}\nTraceback: {traceback.format_exc()}")
+            return error_response(f"Failed to update duty: {str(e)}", 500)
     
     @staticmethod
     def delete_duty(duty_id):
@@ -100,3 +101,29 @@ class DutyController:
         except Exception as e:
             log_error(f"Error deleting duty {duty_id}: {str(e)}")
             return error_response("Failed to delete duty", 500)
+    
+    @staticmethod
+    def check_officer_conflicts(data):
+        """Check for officer scheduling conflicts"""
+        try:
+            officer_ids = data.get('officer_ids') or data.get('officerIds') or []
+            start_time = data.get('start_time') or data.get('startTime')
+            end_time = data.get('end_time') or data.get('endTime')
+            exclude_duty_id = data.get('exclude_duty_id') or data.get('excludeDutyId')
+            
+            if not officer_ids or not start_time or not end_time:
+                return error_response("Missing required fields: officer_ids, start_time, end_time", 400)
+            
+            log_info(f"Checking conflicts for officers: {officer_ids}")
+            conflicts = DutyModel.check_officer_conflicts(
+                officer_ids, 
+                start_time, 
+                end_time,
+                exclude_duty_id
+            )
+            
+            return success_response(conflicts)
+        except Exception as e:
+            import traceback
+            log_error(f"Error checking officer conflicts: {str(e)}\nTraceback: {traceback.format_exc()}")
+            return error_response(f"Failed to check conflicts: {str(e)}", 500)

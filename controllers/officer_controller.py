@@ -51,6 +51,10 @@ class OfficerController:
             # Fetch the created officer to return complete data
             officer = OfficerModel.get_officer_by_id(officer_id)
             return success_response(officer, 201)
+        except ValueError as e:
+            # Handle duplicate staff_id error
+            log_error(f"Duplicate officer creation attempt: {str(e)}")
+            return error_response(str(e), 409)  # 409 Conflict
         except Exception as e:
             log_error(f"Error creating officer: {str(e)}")
             return error_response("Failed to create officer", 500)

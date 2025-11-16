@@ -51,3 +51,10 @@ def update_duty(duty_id):
 def delete_duty(duty_id):
     """DELETE /api/duties/:id - Delete duty"""
     return DutyController.delete_duty(duty_id)
+
+
+@duty_bp.route('/check-conflicts', methods=['POST'])
+def check_officer_conflicts():
+    """POST /api/duties/check-conflicts - Check for officer scheduling conflicts"""
+    data = request.get_json()
+    return DutyController.check_officer_conflicts(data)

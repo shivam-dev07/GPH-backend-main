@@ -209,6 +209,85 @@ class DutyModel:
                 return duties
     
     @staticmethod
+    def check_officer_conflicts(officer_ids, start_time, end_time, exclude_duty_id=None):
+        """
+        Check if any officers have conflicting duty assignments.
+        
+        Args:
+            officer_ids (list): List of officer IDs to check
+            start_time (str): Start time of the duty
+            end_time (str): End time of the duty
+            exclude_duty_id (str, optional): Duty ID to exclude from conflict check (for updates)
+            
+        Returns:
+            dict: Dictionary with conflict information
+                  { 'has_conflicts': bool, 'conflicts': list of conflict details }
+        """
+        if not officer_ids or not start_time or not end_time:
+            return {'has_conflicts': False, 'conflicts': []}
+        
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                conflicts = []
+                
+                for officer_id in officer_ids:
+                    # Resolve staff_id to UUID if needed
+                    if officer_id and len(str(officer_id)) < 20:
+                        cursor.execute(
+                            "SELECT id FROM officers WHERE staff_id = %s LIMIT 1",
+                            (officer_id,)
+                        )
+                        officer_row = cursor.fetchone()
+                        if officer_row:
+                            actual_officer_id = officer_row['id']
+                        else:
+                            continue
+                    else:
+                        actual_officer_id = officer_id
+                    
+                    # Check for overlapping duties
+                    query = """
+                        SELECT d.id, d.type, d.start_time, d.end_time, d.status,
+                               o.staff_id, o.staff_name
+                        FROM duties d
+                        JOIN duty_officers do ON d.id = do.duty_id
+                        JOIN officers o ON do.officer_id = o.id
+                        WHERE do.officer_id = %s
+                        AND d.status NOT IN ('complete', 'completed', 'cancelled')
+                        AND (
+                            (d.start_time <= %s AND d.end_time > %s)
+                            OR (d.start_time < %s AND d.end_time >= %s)
+                            OR (d.start_time >= %s AND d.end_time <= %s)
+                        )
+                    """
+                    
+                    params = [actual_officer_id, start_time, start_time, end_time, end_time, start_time, end_time]
+                    
+                    # Exclude current duty if updating
+                    if exclude_duty_id:
+                        query += " AND d.id != %s"
+                        params.append(exclude_duty_id)
+                    
+                    cursor.execute(query, params)
+                    conflicting_duties = cursor.fetchall()
+                    
+                    for duty in conflicting_duties:
+                        conflicts.append({
+                            'officer_id': duty['staff_id'],
+                            'officer_name': duty['staff_name'],
+                            'duty_id': duty['id'],
+                            'duty_type': duty['type'],
+                            'duty_start': duty['start_time'].strftime('%Y-%m-%d %H:%M:%S') if duty['start_time'] else None,
+                            'duty_end': duty['end_time'].strftime('%Y-%m-%d %H:%M:%S') if duty['end_time'] else None,
+                            'status': duty['status']
+                        })
+                
+                return {
+                    'has_conflicts': len(conflicts) > 0,
+                    'conflicts': conflicts
+                }
+    
+    @staticmethod
     def create_duty(duty_data):
         """
         Create a new duty.
@@ -239,6 +318,23 @@ class DutyModel:
                 # Generate ID if not provided
                 duty_id = duty_data.get('id') or str(uuid.uuid4())
                 
+                # Get and convert datetime fields early for conflict checking
+                start_time = convert_iso_to_mysql(duty_data.get('start_time') or duty_data.get('startTime'))
+                end_time = convert_iso_to_mysql(duty_data.get('end_time') or duty_data.get('endTime'))
+                
+                # Check for officer conflicts
+                officer_ids = duty_data.get('officerUids') or duty_data.get('officer_uids') or []
+                if officer_ids and start_time and end_time:
+                    conflict_check = DutyModel.check_officer_conflicts(officer_ids, start_time, end_time)
+                    if conflict_check['has_conflicts']:
+                        # Raise exception with detailed conflict information
+                        conflict_details = conflict_check['conflicts'][0]  # Get first conflict
+                        raise ValueError(
+                            f"Officer {conflict_details['officer_name']} ({conflict_details['officer_id']}) "
+                            f"is already assigned to a {conflict_details['duty_type']} duty from "
+                            f"{conflict_details['duty_start']} to {conflict_details['duty_end']}"
+                        )
+                
                 # Insert duty
                 query = """
                     INSERT INTO duties 
@@ -263,9 +359,7 @@ class DutyModel:
                 
                 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 
-                # Get and convert datetime fields
-                start_time = convert_iso_to_mysql(duty_data.get('start_time') or duty_data.get('startTime'))
-                end_time = convert_iso_to_mysql(duty_data.get('end_time') or duty_data.get('endTime'))
+                # start_time and end_time already converted above for conflict checking
                 assigned_at = convert_iso_to_mysql(duty_data.get('assigned_at') or duty_data.get('assignedAt')) or now
                 last_updated = convert_iso_to_mysql(duty_data.get('last_updated') or duty_data.get('lastUpdated')) or now
                 
@@ -330,8 +424,53 @@ class DutyModel:
         Returns:
             bool: True if successful
         """
+        from datetime import datetime
+        
+        def convert_iso_to_mysql(iso_string):
+            """Convert ISO 8601 datetime string to MySQL datetime format"""
+            if not iso_string:
+                return None
+            try:
+                # Parse ISO format (e.g., '2025-11-15T16:00:00.000Z')
+                dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+                # Return MySQL format: 'YYYY-MM-DD HH:MM:SS'
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                return iso_string  # Return as-is if parsing fails
+        
         with get_connection() as conn:
             with conn.cursor() as cursor:
+                # Get current duty details for conflict checking
+                cursor.execute(
+                    "SELECT start_time, end_time FROM duties WHERE id = %s",
+                    (duty_id,)
+                )
+                current_duty = cursor.fetchone()
+                if not current_duty:
+                    return False
+                
+                # Determine the time range for conflict checking
+                start_time = convert_iso_to_mysql(updates.get('start_time') or updates.get('startTime')) or current_duty['start_time']
+                end_time = convert_iso_to_mysql(updates.get('end_time') or updates.get('endTime')) or current_duty['end_time']
+                
+                # Check for officer conflicts if officers are being updated
+                if 'officer_uids' in updates or 'officerUids' in updates:
+                    officer_uids = updates.get('officer_uids') or updates.get('officerUids') or []
+                    if officer_uids and start_time and end_time:
+                        conflict_check = DutyModel.check_officer_conflicts(
+                            officer_uids, 
+                            start_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(start_time, 'strftime') else start_time,
+                            end_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(end_time, 'strftime') else end_time,
+                            exclude_duty_id=duty_id
+                        )
+                        if conflict_check['has_conflicts']:
+                            conflict_details = conflict_check['conflicts'][0]
+                            raise ValueError(
+                                f"Officer {conflict_details['officer_name']} ({conflict_details['officer_id']}) "
+                                f"is already assigned to a {conflict_details['duty_type']} duty from "
+                                f"{conflict_details['duty_start']} to {conflict_details['duty_end']}"
+                            )
+                
                 # Build dynamic update query
                 fields = []
                 values = []
@@ -340,26 +479,65 @@ class DutyModel:
                     fields.append("status = %s")
                     values.append(updates['status'])
                 
-                if 'checkInTime' in updates:
-                    fields.append("check_in_time = %s")
-                    values.append(updates['checkInTime'])
+                if 'start_time' in updates or 'startTime' in updates:
+                    fields.append("start_time = %s")
+                    values.append(convert_iso_to_mysql(updates.get('start_time') or updates.get('startTime')))
                 
-                if 'checkOutTime' in updates:
+                if 'end_time' in updates or 'endTime' in updates:
+                    fields.append("end_time = %s")
+                    values.append(convert_iso_to_mysql(updates.get('end_time') or updates.get('endTime')))
+                
+                if 'checkInTime' in updates or 'check_in_time' in updates:
+                    fields.append("check_in_time = %s")
+                    values.append(convert_iso_to_mysql(updates.get('checkInTime') or updates.get('check_in_time')))
+                
+                if 'checkOutTime' in updates or 'check_out_time' in updates:
                     fields.append("check_out_time = %s")
-                    values.append(updates['checkOutTime'])
+                    values.append(convert_iso_to_mysql(updates.get('checkOutTime') or updates.get('check_out_time')))
                 
                 if 'comments' in updates:
                     fields.append("comments = %s")
                     values.append(updates['comments'])
                 
+                # Handle officer updates
+                if 'officer_uids' in updates or 'officerUids' in updates:
+                    officer_uids = updates.get('officer_uids') or updates.get('officerUids') or []
+                    
+                    # Delete existing officer assignments
+                    cursor.execute("DELETE FROM duty_officers WHERE duty_id = %s", (duty_id,))
+                    
+                    # Add new officer assignments
+                    for officer_ref in officer_uids:
+                        # Check if this is a staff_id or UUID
+                        if officer_ref and len(str(officer_ref)) < 20:  # Likely a staff_id
+                            cursor.execute(
+                                "SELECT id FROM officers WHERE staff_id = %s LIMIT 1",
+                                (officer_ref,)
+                            )
+                            officer_row = cursor.fetchone()
+                            if officer_row:
+                                officer_id = officer_row['id']
+                            else:
+                                continue
+                        else:
+                            officer_id = officer_ref
+                        
+                        cursor.execute(
+                            "INSERT INTO duty_officers (duty_id, officer_id) VALUES (%s, %s)",
+                            (duty_id, officer_id)
+                        )
+                
+                # Always update last_updated timestamp
                 fields.append("last_updated = NOW()")
                 values.append(duty_id)
                 
-                query = f"UPDATE duties SET {', '.join(fields)} WHERE id = %s"
-                cursor.execute(query, values)
+                if len(fields) > 1:  # More than just last_updated
+                    query = f"UPDATE duties SET {', '.join(fields)} WHERE id = %s"
+                    cursor.execute(query, values)
+                
                 conn.commit()
                 
-                return cursor.rowcount > 0
+                return True
     
     @staticmethod
     def delete_duty(duty_id):

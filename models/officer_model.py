@@ -77,11 +77,25 @@ class OfficerModel:
             
         Returns:
             str: ID of newly created officer
+            
+        Raises:
+            ValueError: If officer with same staff_id already exists
         """
         officer_id = str(uuid.uuid4())
         
         with get_connection() as conn:
             with conn.cursor() as cursor:
+                # Check if officer with same staff_id already exists
+                check_query = "SELECT id, staff_name FROM officers WHERE staff_id = %s"
+                cursor.execute(check_query, (officer_data.get('staff_id'),))
+                existing_officer = cursor.fetchone()
+                
+                if existing_officer:
+                    raise ValueError(
+                        f"Officer with Staff ID '{officer_data.get('staff_id')}' already exists "
+                        f"({existing_officer.get('staff_name', 'Unknown')})"
+                    )
+                
                 query = """
                     INSERT INTO officers 
                     (id, staff_id, staff_name, staff_designation, staff_nature_of_work, status)
